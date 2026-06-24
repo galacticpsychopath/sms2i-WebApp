@@ -1,7 +1,7 @@
 import os
 import json
 import time
-from flask import Flask, render_template, Response, jsonify, request
+from flask import Flask, render_template, Response, jsonify, request, url_for
 from camera_manager import camera_manager
 
 app = Flask(__name__)
@@ -16,11 +16,6 @@ engine_config = {
 # --- GLOBAL INDUSTRIAL PRODUCT DATABASES ---
 # Stores product details and historical tracking counts
 product_registry = {}
-
-session_stats = {
-    "session_total": 0,
-    "detected_object": None  # Will hold: {"name": x, "reference": y, "image_url": z}
-}
 
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -47,12 +42,28 @@ def video_feed():
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    # Append the exact total count of this specific item dynamically if detected
-    response_data = dict(session_stats)
-    if session_stats["detected_object"]:
-        ref = session_stats["detected_object"]["reference"]
-        if ref in product_registry:
-            response_data["session_total"] = product_registry[ref]["count"]
+    response_data = {
+        "session_total": camera_manager.total_detections,
+        "detected_object": None,
+        "battery_level": camera_manager.battery_level,
+        "robot_status": camera_manager.robot_status,
+        "registered_products": len(product_registry),
+        "faults": camera_manager.get_faults() if hasattr(camera_manager, 'get_faults') else []
+    }
+
+    if camera_manager.detected_object and camera_manager.detected_ref:
+        response_data["detected_object"] = {
+            "name": camera_manager.detected_object,
+            "reference": camera_manager.detected_ref,
+            "image_url": None
+        }
+
+        if camera_manager.detected_ref in product_registry:
+            response_data["session_total"] = product_registry[camera_manager.detected_ref].get("count", camera_manager.total_detections)
+            images = product_registry[camera_manager.detected_ref].get("images", [])
+            if images:
+                response_data["detected_object"]["image_url"] = url_for('static', filename=f'uploads/{images[0]}')
+
     return jsonify(response_data)
 
 
@@ -60,13 +71,26 @@ def get_stats():
 def configure_engine():
     try:
         data = request.json
-        if not data: return jsonify({"status": "error"}), 400
-        if 'threshold' in data: engine_config['threshold'] = float(data['threshold'])
-        if 'ioa' in data: engine_config['ioa'] = float(data['ioa'])
+        if not data:
+            return jsonify({"status": "error", "message": "Missing JSON payload."}), 400
+
+        if 'threshold' in data:
+            engine_config['threshold'] = float(data['threshold'])
+        if 'ioa' in data:
+            engine_config['ioa'] = float(data['ioa'])
+        if 'roi' in data:
+            engine_config['roi'] = data['roi']
+
+        if hasattr(camera_manager, 'update_config'):
+            camera_manager.update_config(
+                threshold=engine_config.get('threshold'),
+                ioa=engine_config.get('ioa'),
+                roi=engine_config.get('roi')
+            )
+
         return jsonify({"status": "success", "config": engine_config}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route('/api/add_product', methods=['POST'])
 def add_product():
@@ -77,31 +101,29 @@ def add_product():
         files = request.files.getlist('product_images')
 
         if not product_name or not reference_code or len(files) != 3:
-            return jsonify({"status": "error", "message": "Invalid form payload."}), 400
+            return jsonify({"status": "error", "message": "Invalid form payload. Provide a name, reference code, and exactly 3 images."}), 400
 
         saved_paths = []
         for index, file in enumerate(files):
-            if file.filename != '':
-                filename = f"{reference_code}_angle_{index}.png"
-                file_path = os.path.join(UPLOAD_FOLDER, filename)
-                file.save(file_path)
-                saved_paths.append(file_path)
+            if not file or file.filename == '':
+                return jsonify({"status": "error", "message": "All three images must be uploaded."}), 400
 
-        # Register inside memory map arrays
+            filename = f"{reference_code}_angle_{index}.png"
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(file_path)
+            saved_paths.append(filename)
+
         product_registry[reference_code] = {
             "name": product_name,
             "images": saved_paths,
             "count": 0
         }
 
-        # Sync registry tracking data straight over to the camera manager module
         camera_manager.update_registry(product_registry)
-
         print(f"[Registry Sync]: {product_name} ({reference_code}) loaded into active identification memory maps.")
-        return jsonify({"status": "success"}), 200
+        return jsonify({"status": "success", "message": "Product registered successfully."}), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

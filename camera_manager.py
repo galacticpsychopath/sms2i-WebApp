@@ -23,10 +23,28 @@ class CameraManager:
         self.total_detections = 0         # Cumulative total tracker counter
         self.already_counted = False      # State lock to prevent duplicate counting of a single object
         self.stats = {"Plastic": 0, "Metal": 0, "Organic": 0, "Paper": 0, "Glass": 0}
+        self.product_registry = {}
+        self.processing_threshold = 0.5
+        self.roi = [0, 0, 640, 480]
+        self.ioa = 0.0
         
         # --- Configurable Processing Thresholds ---
         self.min_contour_area = 1500
         self.binary_threshold = 100
+
+    def update_registry(self, registry):
+        """Updates the in-memory product registry used by the detection engine."""
+        self.product_registry = registry or {}
+
+    def update_config(self, threshold=None, ioa=None, roi=None):
+        """Applies configuration values sent from the front-end engine controls."""
+        if threshold is not None:
+            self.processing_threshold = float(threshold)
+            self.binary_threshold = int(max(0.0, min(1.0, self.processing_threshold)) * 255)
+        if ioa is not None:
+            self.ioa = float(ioa)
+        if roi is not None and isinstance(roi, (list, tuple)) and len(roi) == 4:
+            self.roi = [int(roi[0]), int(roi[1]), int(roi[2]), int(roi[3])]
 
     def _update_telemetry(self):
         """Simulates battery usage consumption to keep the UI panels dynamic."""
@@ -57,33 +75,44 @@ class CameraManager:
             ret, jpeg = cv2.imencode('.jpg', standby_canvas)
             return jpeg.tobytes() if ret else None
 
-        objects_detected = 0 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) 
-        _, binary_map = cv2.threshold(gray, self.binary_threshold, 255, cv2.THRESH_BINARY_INV) 
+        objects_detected = 0
+        x0, y0, x1, y1 = self.roi
+        h, w = frame.shape[:2]
+        x0 = max(0, min(x0, w - 1))
+        x1 = max(0, min(x1, w))
+        y0 = max(0, min(y0, h - 1))
+        y1 = max(0, min(y1, h))
 
-        # Step 2: Computer Vision Shape Detection 
+        processing_frame = frame[y0:y1, x0:x1] if (x1 > x0 and y1 > y0) else frame
+        gray = cv2.cvtColor(processing_frame, cv2.COLOR_BGR2GRAY)
+        _, binary_map = cv2.threshold(gray, self.binary_threshold, 255, cv2.THRESH_BINARY_INV)
+
+        # Step 2: Computer Vision Shape Detection
         contours, _ = cv2.findContours(binary_map, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         for contour in contours:
-            # Drop processing cycle noise by isolating meaningful masses
-            if cv2.contourArea(contour) > self.min_contour_area: 
-                objects_detected += 1 
-                
-                # Render clean bounding profile data boxes around the targets
-                x, y, w, h = cv2.boundingRect(contour)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            if cv2.contourArea(contour) > self.min_contour_area:
+                objects_detected += 1
+                rx, ry, rw, rh = cv2.boundingRect(contour)
+                cv2.rectangle(frame, (x0 + rx, y0 + ry), (x0 + rx + rw, y0 + ry + rh), (255, 0, 0), 2)
 
         # --- STATE AND COUNT HANDLING PIPELINES ---
         if objects_detected > 0:
-            # Update product context properties dynamically
-            self.detected_object = f"Product Asset"
-            self.detected_ref = f"REF-{objects_detected:03d}"
-            
-            if not self.already_counted:
-                self.total_detections += 1
-                # Increment generic default category (e.g. Plastic) to feed UI metrics
-                self.stats["Plastic"] += 1
-                self.already_counted = True
+            if self.product_registry:
+                detected_ref, product = next(iter(self.product_registry.items()))
+                self.detected_object = product.get("name", "Product Asset")
+                self.detected_ref = detected_ref
+                if not self.already_counted:
+                    self.total_detections += 1
+                    product["count"] = product.get("count", 0) + 1
+                    self.already_counted = True
+            else:
+                self.detected_object = "Product Asset"
+                self.detected_ref = f"REF-{objects_detected:03d}"
+                if not self.already_counted:
+                    self.total_detections += 1
+                    self.stats["Plastic"] += 1
+                    self.already_counted = True
         else:
             self.detected_object = None
             self.detected_ref = None
