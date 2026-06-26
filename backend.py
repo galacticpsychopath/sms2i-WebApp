@@ -1,129 +1,187 @@
 import os
 import json
 import time
-from flask import Flask, render_template, Response, jsonify, request, url_for
-from camera_manager import camera_manager
+from flask import Flask, render_template, Response, jsonify, request, url_for , send_from_directory
+import camera_manager
+import sqlite3 
 
-app = Flask(__name__)
-
-# --- ACTIVE ENGINES ---
-engine_config = {
-    "threshold": 0.50,
-    "roi": [0, 0, 640, 480],
-    "ioa": 0.0
-}
-
-# --- GLOBAL INDUSTRIAL PRODUCT DATABASES ---
-# Stores product details and historical tracking counts
-product_registry = {}
-
-UPLOAD_FOLDER = os.path.join('static', 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app = Flask(__name__, template_folder='templates', static_folder='static')
 
 
+# routes for web pages
 @app.route('/')
-def object_counting():
-    return render_template('objectcounting.html')
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
+
+@app.route('/livefeed')
+def live_feed_page():
+    
+    return render_template('livefeed.html')
+
+@app.route('/register')
+def registerproduct():
+    return render_template('registerproduct.html')
+
+# product saving path 
+upload_folder = 'uploads'
+os.makedirs(upload_folder, exist_ok=True) 
+
+# data base setup 
+BD_path = "product.db"
+
+def init_db():
+    conn = sqlite3.connect(BD_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            prod_ref TEXT UNIQUE NOT NULL,
+            prod_name TEXT NOT NULL,
+            prod_img1 TEXT NOT NULL,
+            prod_img2 TEXT NOT NULL,
+            prod_img3 TEXT NOT NULL
+        )
+    ''')
+    conn.commit() 
+    conn.close()     
+ 
+init_db() 
 
 
-def gen(camera_instance):
-    while True:
-        frame = camera_instance.get_frame()
-        if frame is not None:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        time.sleep(0.01)
+def dbinsert_product(ref, name, img1, img2, img3):
+    conn = sqlite3.connect(BD_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO products (prod_ref, prod_name, prod_img1, prod_img2, prod_img3) 
+        VALUES (?, ?, ?, ?, ?)
+    ''', (ref, name, img1, img2, img3))
+    conn.commit()
+    conn.close()
 
-@app.route('/objectcounting')
+ 
+def dbproduct_exists(prod_ref):
+    conn = sqlite3.connect(BD_path)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM products WHERE prod_ref=?", (prod_ref,))
+    result = cur.fetchone()
+    conn.close()
+    return result
+
+
+def dbget_all_products():
+    conn = sqlite3.connect(BD_path)
+    cur = conn.cursor()
+    # FIX: Select the correct columns matching your table schema layout
+    cur.execute("SELECT prod_ref, prod_name, prod_img1, prod_img2, prod_img3 FROM products")
+    result = cur.fetchall()
+    conn.close()
+    return result
+
+
+def dbdelete_product(prod_ref):
+    conn = sqlite3.connect(BD_path)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM products WHERE prod_ref=?", (prod_ref,)) 
+    conn.commit()
+    conn.close()
+
+# ==========================================
+# API ROUTES FOR DATA HANDLING
+# ==========================================
+
+@app.route('/api/register_product', methods=['POST'])
+def register_product():
+    data = request.form
+    prod_ref = data.get('prod_ref')
+    prod_name = data.get('prod_name')
+    files = request.files.getlist('images')
+
+    print("Form Keys received:", request.form.keys())
+    print("File Keys received:", request.files.keys())
+    print("Files list length:", len(files))
+    
+    len_files = 0
+    for file in files:
+        if file and file.filename:
+            len_files += 1
+
+    if not prod_ref or not prod_name or len_files != 3:
+        return jsonify({'error': 'Provide a reference, name, and exactly 3 images.'}), 400
+
+    if dbproduct_exists(prod_ref):
+        return jsonify({'error': 'Product already exists'}), 400
+
+    saved_filenames = []
+    
+    # FIX: Loop through each file using enumerate to save all three items uniquely
+    for index, file in enumerate(files):
+        filename = f"{prod_ref}_angle_{index}.png"
+        # Using hardcoded static pathway so images load on the UI pages seamlessly
+        file.save(os.path.join('uploads', filename))
+        saved_filenames.append(filename)
+
+    # FIX: Pass all three generated filenames to your insertion function
+    dbinsert_product(prod_ref, prod_name, saved_filenames[0], saved_filenames[1], saved_filenames[2])
+    
+    return jsonify({'message': 'Product registered successfully'}), 201 
+
+#display all products
+@app.route('/uploads/<filename>')
+def serve_upload_file(filename):
+    uploads_dir = os.path.join(app.root_path, 'uploads')
+    return send_from_directory(uploads_dir, filename)
+
+@app.route('/api/get_products', methods=['GET'])
+def get_products():
+    # 1. Pull the raw database array list
+    raw_rows = dbget_all_products() 
+    
+    # 2. Build a brand new list to hold mapped dictionaries
+    formatted_products = []
+    
+    for row in raw_rows:
+        # Convert the raw array [0, 1, 2, 3, 4] into the key-value names your JS is screaming for
+        formatted_products.append({
+            "reference": row[0],
+            "name": row[1],
+            "image_url": f"/uploads/{row[2]}" if row[2] else "",
+            "image_url2": f"/uploads/{row[3]}" if row[3] else "",
+            "image_url3": f"/uploads/{row[4]}" if row[4] else ""
+        })
+          
+    # 3. Return the clean JSON objects to your JavaScript frontend fetch call
+    return jsonify(formatted_products)
+@app.route('/api/delete_product', methods=['POST'])
+def delete_product():
+    data = request.get_json()
+    print("!!! DELETE API HIT !!!",data)
+    prod_ref = data.get('reference')
+    print("Product reference received for deletion:", prod_ref)
+    if not prod_ref:
+        return jsonify({'error': 'Product reference is required'}), 400
+    if not dbproduct_exists(prod_ref):
+        return jsonify({'error': 'Product does not exist'}), 404
+    else:
+        dbdelete_product(prod_ref)
+        return jsonify({'message': 'Product deleted successfully'}), 200
+
+
+
+@app.route('/video_feed')
 def video_feed():
-    return Response(gen(camera_manager),
+    """Streams live video directly to the livefeed html <img> element."""
+    if not camera_manager.camera_active:
+        return "Camera hardware is not running.", 503
+    return Response(camera_manager.generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    response_data = {
-        "session_total": camera_manager.total_detections,
-        "detected_object": None,
-        "battery_level": camera_manager.battery_level,
-        "robot_status": camera_manager.robot_status,
-        "registered_products": len(product_registry),
-        "faults": camera_manager.get_faults() if hasattr(camera_manager, 'get_faults') else []
-    }
-
-    if camera_manager.detected_object and camera_manager.detected_ref:
-        response_data["detected_object"] = {
-            "name": camera_manager.detected_object,
-            "reference": camera_manager.detected_ref,
-            "image_url": None
-        }
-
-        if camera_manager.detected_ref in product_registry:
-            response_data["session_total"] = product_registry[camera_manager.detected_ref].get("count", camera_manager.total_detections)
-            images = product_registry[camera_manager.detected_ref].get("images", [])
-            if images:
-                response_data["detected_object"]["image_url"] = url_for('static', filename=f'uploads/{images[0]}')
-
-    return jsonify(response_data)
+@app.route('/api/current_detection')
+def current_detection():
+    
+    return jsonify(camera_manager.current_match_info)
 
 
-@app.route('/api/configure', methods=['POST'])
-def configure_engine():
-    try:
-        data = request.json
-        if not data:
-            return jsonify({"status": "error", "message": "Missing JSON payload."}), 400
 
-        if 'threshold' in data:
-            engine_config['threshold'] = float(data['threshold'])
-        if 'ioa' in data:
-            engine_config['ioa'] = float(data['ioa'])
-        if 'roi' in data:
-            engine_config['roi'] = data['roi']
 
-        if hasattr(camera_manager, 'update_config'):
-            camera_manager.update_config(
-                threshold=engine_config.get('threshold'),
-                ioa=engine_config.get('ioa'),
-                roi=engine_config.get('roi')
-            )
-
-        return jsonify({"status": "success", "config": engine_config}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/add_product', methods=['POST'])
-def add_product():
-    """Saves details and binds dynamic paths directly to identification buffers."""
-    try:
-        product_name = request.form.get('product_name')
-        reference_code = request.form.get('reference_code')
-        files = request.files.getlist('product_images')
-
-        if not product_name or not reference_code or len(files) != 3:
-            return jsonify({"status": "error", "message": "Invalid form payload. Provide a name, reference code, and exactly 3 images."}), 400
-
-        saved_paths = []
-        for index, file in enumerate(files):
-            if not file or file.filename == '':
-                return jsonify({"status": "error", "message": "All three images must be uploaded."}), 400
-
-            filename = f"{reference_code}_angle_{index}.png"
-            file_path = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(file_path)
-            saved_paths.append(filename)
-
-        product_registry[reference_code] = {
-            "name": product_name,
-            "images": saved_paths,
-            "count": 0
-        }
-
-        camera_manager.update_registry(product_registry)
-        print(f"[Registry Sync]: {product_name} ({reference_code}) loaded into active identification memory maps.")
-        return jsonify({"status": "success", "message": "Product registered successfully."}), 200
-
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
