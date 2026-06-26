@@ -64,7 +64,7 @@ function showProductDetails(product) {
 
     // 3. Handle the first image placement layout safely
     if (product.image_url) {
-        imgElement.src= product.image_url;      //fix this
+        imgElement.src= product.image_url;         //fix this
         imgElement.style.display = "block";       // Make the image visible on screen
     } else {
         imgElement.style.display = "none";        // Keep hidden if no image data was returned

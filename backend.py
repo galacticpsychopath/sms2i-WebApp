@@ -180,7 +180,7 @@ def current_detection():
     
     return jsonify(camera_manager.current_match_info)
 
-
+   
 
 
 if __name__ == '__main__':
