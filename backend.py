@@ -3,7 +3,11 @@ import json
 import time
 from flask import Flask, render_template, Response, jsonify, request, url_for , send_from_directory
 import camera_manager
-import sqlite3 
+from testing import formfilter
+from testing import expdatefilter
+from testing import exsistingproddetection
+import sqlite3
+
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -180,7 +184,29 @@ def current_detection():
     
     return jsonify(camera_manager.current_match_info)
 
-   
+
+@app.route('/api/update_config', methods=['POST'])
+def update_config():
+    data = request.get_json()
+    print("Config update request received:", data)
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    threashold = data.get('threashold')
+    objectarea = data.get('objectarea')
+    roivalues = data.get('roi')
+    if roivalues and len(roivalues)==4 :
+        camera_manager.roi_x = int(roivalues[0])
+        camera_manager.roi_y = int(roivalues[1])
+        camera_manager.roi_w = int(roivalues[2])
+        camera_manager.roi_h = int(roivalues[3])
+        
+    if threashold is not None:
+        camera_manager.detection_threshold = float(threashold)
+    if objectarea is not None:
+        camera_manager.detection_area = float(objectarea)
+
+    return jsonify({'message': 'Configuration updated successfully'}), 200
 
 
 if __name__ == '__main__':
