@@ -1,7 +1,11 @@
 import cv2 
 import re 
 import datetime
-import pytesseract
+
+try:
+    import pytesseract
+except ModuleNotFoundError:
+    pytesseract = None
 
 
 def check_product_expiration(live_crop_img):
@@ -10,6 +14,10 @@ def check_product_expiration(live_crop_img):
         print("Error : live crop image is not found !")
         return False , "live crop image is not found !"
     
+    if pytesseract is None:
+        print("Error: pytesseract is not installed.")
+        return False, "pytesseract is not installed"
+
     gray = cv2.cvtColor(live_crop_img, cv2.COLOR_BGR2GRAY)
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
     try:

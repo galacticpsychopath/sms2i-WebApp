@@ -11,6 +11,7 @@ roi_h = 0
 
 camera = None
 camera_active = False
+live_crop_img = None
 
 current_match_info = {
     "detected_count": 0,
@@ -35,7 +36,7 @@ def init_camera():
         
 def generate_frames():
     global camera, camera_active, current_match_info, detection_threshold, detection_area
-    global roi_x, roi_y, roi_w, roi_h
+    global roi_x, roi_y, roi_w, roi_h, live_crop_img
     
     while camera_active:
         success, frame = camera.read()
@@ -62,6 +63,7 @@ def generate_frames():
         found_contours, _ = cv2.findContours(binary_map, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         detected_count = 0
+        live_crop_img = None
 
         
         for contour in found_contours:

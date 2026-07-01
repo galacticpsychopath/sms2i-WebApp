@@ -1,6 +1,48 @@
 ﻿
 //get the config inputs from html 
 
+const searchInput = document.getElementById('search-input');
+
+if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+        const searchQuery = e.target.value.trim();
+        
+        
+        fetch(`/api/search_products?query=${encodeURIComponent(searchQuery)}`)
+            .then(response => response.json())
+            .then(data => {
+                const tableBody = document.getElementById('products-table-body');
+                if (!tableBody) return;
+                
+                
+                tableBody.innerHTML = '';
+                
+                if (data.length === 0) {
+                    tableBody.innerHTML = `<tr><td colspan="2" style="text-align: center; padding: 20px; color: var(--text-secondary);">No products match this reference.</td></tr>`;
+                    return;
+                }
+                
+                
+                data.forEach(product => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${product.reference}</td>
+                        <td>${product.name}</td>
+                    `;
+                    
+                    
+                    row.addEventListener('click', () => {
+                        if (typeof displayProductDetails === 'function') {
+                            displayProductDetails(product);
+                        }
+                    });
+                    
+                    tableBody.appendChild(row);
+                });
+            })
+            .catch(err => console.error('Error during live product search query:', err));
+    });
+}
 
 function update_config(){
     var threashold = document.getElementById('threashold').value

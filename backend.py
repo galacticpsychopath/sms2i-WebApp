@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import cv2
 from flask import Flask, render_template, Response, jsonify, request, url_for , send_from_directory
 import camera_manager
 from testing import formfilter
@@ -89,9 +90,7 @@ def dbdelete_product(prod_ref):
     conn.commit()
     conn.close()
 
-# ==========================================
-# API ROUTES FOR DATA HANDLING
-# ==========================================
+
 
 @app.route('/api/register_product', methods=['POST'])
 def register_product():
@@ -181,8 +180,15 @@ def video_feed():
 
 @app.route('/api/current_detection')
 def current_detection():
-    
-    return jsonify(camera_manager.current_match_info)
+    match_info = dict(camera_manager.current_match_info)
+    count_value = match_info.get('detected_count', 0)
+    return jsonify({
+        'name': match_info.get('name', 'No object detected'),
+        'reference': match_info.get('reference', '--'),
+        'count': count_value,
+        'image_url': match_info.get('image_url', ''),
+        'status': match_info.get('status', 'Scanning')
+    })
 
 
 @app.route('/api/update_config', methods=['POST'])
@@ -207,32 +213,69 @@ def update_config():
         camera_manager.detection_area = float(objectarea)
 
     return jsonify({'message': 'Configuration updated successfully'}), 200
+
+@app.route('/api/search_products', methods=['GET'])
+def search_products():
+    query = request.args.get('query', '').strip()
+    
+    conn = sqlite3.connect(BD_path)
+    cur = conn.cursor()
+    
+    cur.execute("SELECT prod_ref, prod_name, prod_img1, prod_img2, prod_img3 FROM products WHERE prod_ref LIKE ?", (f"%{query}%",))
+    raw_rows = cur.fetchall()
+    conn.close()
+    
+    formatted_products = []
+    for row in raw_rows:
+        formatted_products.append({
+            "reference": row[0],
+            "name": row[1],
+            "image_url": f"/uploads/{row[2]}" if row[2] else "",
+            "image_url2": f"/uploads/{row[3]}" if row[3] else "",
+            "image_url3": f"/uploads/{row[4]}" if row[4] else ""
+        })
+    return jsonify(formatted_products),200
+
 @app.route('/api/check_product', methods=['POST'])
 def check_product():
-    
     if not camera_manager.camera_active:
         return jsonify({'error': 'Camera is not active'}), 503
-    
-    live_crop_img = camera_manager.live_crop_img
-    
-    exp_date_check = expdatefilter.check_product_expiration(camera_manager.get(live_crop_img))
+
+    live_crop_img = getattr(camera_manager, 'live_crop_img', None)
+    if live_crop_img is None:
+        return jsonify({'error': 'No inspection image available yet'}), 400
+
+    exp_date_check = expdatefilter.check_product_expiration(live_crop_img)
     print("exp date check result :", exp_date_check)
-    
-    exsisting_product_check = exsistingproddetection.check_product_existence(camera_manager.get(live_crop_img), dbget_all_products())
+
+    db_products = dbget_all_products()
+    exsisting_product_check = exsistingproddetection.check_product_existence(live_crop_img, db_products)
     print("exsisting product check result :", exsisting_product_check)
-    
-    form_check = formfilter.check_product_form(camera_manager.get(live_crop_img), perfect_database_img)
-    print("form check result :", form_check)
-    
-    if   exp_date_check[0] and  exsisting_product_check[0] and  form_check[0]:
-        return jsonify({'result': 'Product is valid, exists, and is in good form.'}), 200
+
+    perfect_database_img = None
+    for row in db_products:
+        image_filename = row[2] or row[3] or row[4]
+        if image_filename:
+            image_path = os.path.join(app.root_path, 'uploads', image_filename)
+            perfect_database_img = cv2.imread(image_path)
+            if perfect_database_img is not None:
+                break
+
+    if perfect_database_img is None:
+        form_check = (False, 'No reference image available for form matching')
     else:
-        return jsonify({
-            'result': 'Product check failed.',
-            'expiration_check': exp_date_check,
-            'existence_check': exsisting_product_check,
-            'form_check': form_check
-        }), 400
+        form_check = formfilter.check_product_form(live_crop_img, perfect_database_img)
+    print("form check result :", form_check)
+
+    if exp_date_check[0] and exsisting_product_check[0] and form_check[0]:
+        return jsonify({'result': 'Product is valid, exists, and is in good form.'}), 200
+
+    return jsonify({
+        'result': 'Product check failed.',
+        'expiration_check': exp_date_check,
+        'existence_check': exsisting_product_check,
+        'form_check': form_check
+    }), 400
 
 
 
