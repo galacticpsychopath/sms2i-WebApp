@@ -207,6 +207,33 @@ def update_config():
         camera_manager.detection_area = float(objectarea)
 
     return jsonify({'message': 'Configuration updated successfully'}), 200
+@app.route('/api/check_product', methods=['POST'])
+def check_product():
+    
+    if not camera_manager.camera_active:
+        return jsonify({'error': 'Camera is not active'}), 503
+    
+    live_crop_img = camera_manager.live_crop_img
+    
+    exp_date_check = expdatefilter.check_product_expiration(camera_manager.get(live_crop_img))
+    print("exp date check result :", exp_date_check)
+    
+    exsisting_product_check = exsistingproddetection.check_product_existence(camera_manager.get(live_crop_img), dbget_all_products())
+    print("exsisting product check result :", exsisting_product_check)
+    
+    form_check = formfilter.check_product_form(camera_manager.get(live_crop_img), perfect_database_img)
+    print("form check result :", form_check)
+    
+    if   exp_date_check[0] and  exsisting_product_check[0] and  form_check[0]:
+        return jsonify({'result': 'Product is valid, exists, and is in good form.'}), 200
+    else:
+        return jsonify({
+            'result': 'Product check failed.',
+            'expiration_check': exp_date_check,
+            'existence_check': exsisting_product_check,
+            'form_check': form_check
+        }), 400
+
 
 
 if __name__ == '__main__':
