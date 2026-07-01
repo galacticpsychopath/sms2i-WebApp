@@ -68,7 +68,8 @@ def generate_frames():
             # Drop any item structural size that falls below your area constraint limit
             if cv2.contourArea(contour) > detection_area:
                 detected_count += 1
-                
+                x, y, w, h = cv2.boundingRect(contour)
+                live_crop_img = analysis_zone[y:y+h, x:x+w]
                 # Offset vector points back to parent matrix coordinate scale if analyzing within a crop box
                 if roi_w > 0 and roi_h > 0:
                     contour[:, :, 0] += roi_x
@@ -84,7 +85,6 @@ def generate_frames():
         success, jpeg_buffer = cv2.imencode('.jpg', frame)
         if not success:
             continue
-            
         raw_bytes = jpeg_buffer.tobytes()
         yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + raw_bytes + b'\r\n')
 
