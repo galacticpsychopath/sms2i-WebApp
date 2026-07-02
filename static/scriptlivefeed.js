@@ -149,7 +149,54 @@ function updateDetectionData() {
             console.error('Error fetching detection data:', error);
         });
 }
+function check_product() {
+    const btn = document.getElementById('check-product-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Inspecting...';
+    }
 
+    fetch('/api/check_product', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        // The backend returns a 200 on success and a 400 on verification failures
+        return response.json().then(data => ({
+            status: response.status,
+            body: data
+        }));
+    })
+    .then(res => {
+        if (res.status === 200) {
+            console.log("Success:", res.body.result);
+            alert(`✅ ${res.body.result}`);
+            // TODO: Update your UI to show a green "VALID" state
+        } else {
+            console.warn("Product check failed:", res.body);
+            
+            // Extract individual filter breakdowns from your backend response
+            const exp = res.body.expiration_check ? res.body.expiration_check[1] : 'Unknown';
+            const exist = res.body.existence_check ? res.body.existence_check[1] : 'Unknown';
+            const form = res.body.form_check ? res.body.form_check[1] : 'Unknown';
+            
+            alert(`❌ Check Failed!\n• Expiration: ${exp}\n• Existence: ${exist}\n• Form: ${form}`);
+            // TODO: Highlight the exact failing step in red on your UI dashboard
+        }
+    })
+    .catch(error => {
+        console.error('Error during product checking execution:', error);
+        alert('Could not complete product inspection. Check backend console.');
+    })
+    .finally(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Check Product';
+        }
+    });
+}
 // Start polling immediately when script loads
 updateDetectionData();
 setInterval(updateDetectionData, POLLING_INTERVAL);

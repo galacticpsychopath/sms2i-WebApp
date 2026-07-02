@@ -224,3 +224,40 @@ footer button:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 16px rgba(0, 242, 255, 0.2);
 }
+#check-product-btn {
+    width: 100%;
+    margin-top: 15px;
+    padding: 14px 24px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 242, 255, 0.2);
+    color: #ffffff;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    background: linear-gradient(135deg, rgba(0, 242, 255, 0.15), rgba(2, 132, 199, 0.25));
+    backdrop-filter: blur(4px);
+    transition: all var(--transition);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+#check-product-btn:hover:not(:disabled) {
+    border-color: var(--primary);
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    box-shadow: 0 0 15px rgba(0, 242, 255, 0.35);
+    transform: translateY(-2px);
+}
+
+#check-product-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+#check-product-btn:disabled {
+    background: rgba(100, 116, 139, 0.1);
+    border-color: rgba(100, 116, 139, 0.2);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}

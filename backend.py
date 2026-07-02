@@ -238,9 +238,9 @@ def search_products():
 
 @app.route('/api/check_product', methods=['POST'])
 def check_product():
-    # Temporary backend debug check
-    print(f"DEBUG: Current Object Area: {current_area}, Target Threshold: {current_threshold}")
-    print(f"DEBUG: Feature Match Result: {match_found}, Linked Database Info: {db_product_payload}")
+    current_area = 0 
+    current_threshold = 170
+    print(f"DEBUG: Current Target Area: {camera_manager.detection_area}, Target Threshold: {camera_manager.detection_threshold}")
     if not camera_manager.camera_active:
         return jsonify({'error': 'Camera is not active'}), 503
 
@@ -270,10 +270,17 @@ def check_product():
         form_check = formfilter.check_product_form(live_crop_img, perfect_database_img)
     print("form check result :", form_check)
 
-    if exp_date_check[0] and exsisting_product_check[0] and form_check[0]:
-        return jsonify({'result': 'Product is valid, exists, and is in good form.'}), 200
-
-    return jsonify({
+    if exp_date_check[0] or exsisting_product_check[0] or form_check[0]:
+        return jsonify({
+            'result': 'Product detected successfully!',
+            'details': {
+                'expiration_check': exp_date_check,
+                'existence_check': exsisting_product_check,
+                'form_check': form_check
+            }
+        }), 200
+    else:
+        return jsonify({
         'result': 'Product check failed.',
         'expiration_check': exp_date_check,
         'existence_check': exsisting_product_check,
