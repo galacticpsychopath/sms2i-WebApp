@@ -101,6 +101,40 @@ async function confirmAndKeepDelete(productRef) {
         alert("Failed to delete product.");
     }
 }
+async function searchProducts() {
+    const searchInput = document.getElementById('search-input');
+    if (!searchInput) return;
+
+    const searchQuery = searchInput.value.trim();
+
+    // Call the search endpoint with the search box text query
+    var response = await fetch('/api/search_products?query=' + encodeURIComponent(searchQuery));
+    var matchedList = await response.json();
+
+    // Clear out whatever is currently visible inside the product table rows
+    tableBody.innerHTML = "";
+
+    // If no records match the criteria
+    if (matchedList.length === 0) {
+        tableBody.innerHTML = "<tr><td colspan='2' style='padding:20px; text-align:center; color: var(--text-secondary);'>No products match this reference.</td></tr>";
+        return;
+    }
+
+    // Populate rows identically to loadProductsTable so the layout is preserved
+    matchedList.forEach(function(product) {
+        var row = document.createElement('tr');
+        row.style.cursor = "pointer";
+        row.innerHTML = "<td style='padding: 10px; font-weight: bold;'>" + product.reference + "</td>" +
+                        "<td style='padding: 10px;'>" + product.name + "</td>";
+
+        // Click interaction binds cleanly to your existing showProductDetails function
+        row.onclick = function() {
+            showProductDetails(product);
+        };
+
+        tableBody.appendChild(row);
+    });
+}
 
 // Start the page by executing the data pull on script initialization
 loadProductsTable();
