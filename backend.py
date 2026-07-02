@@ -238,6 +238,9 @@ def search_products():
 
 @app.route('/api/check_product', methods=['POST'])
 def check_product():
+    # Temporary backend debug check
+    print(f"DEBUG: Current Object Area: {current_area}, Target Threshold: {current_threshold}")
+    print(f"DEBUG: Feature Match Result: {match_found}, Linked Database Info: {db_product_payload}")
     if not camera_manager.camera_active:
         return jsonify({'error': 'Camera is not active'}), 503
 
