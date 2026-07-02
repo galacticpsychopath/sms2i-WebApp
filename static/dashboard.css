@@ -296,3 +296,50 @@ h2 {
         width: 100%;
     }
 }
+.notification-container {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 9999;
+}
+
+.toast {
+    background: var(--surface-strong);
+    border: 1px solid var(--surface-border);
+    color: var(--text-primary);
+    padding: 16px 24px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transform: translateX(120%);
+    animation: slideIn 0.3s forwards, fadeOut 0.3s ease 3.7s forwards;
+}
+
+.toast.success {
+    border-left: 4px solid var(--primary);
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.15);
+}
+
+.toast.error {
+    border-left: 4px solid var(--accent);
+    box-shadow: 0 0 20px rgba(255, 0, 85, 0.15);
+}
+
+@keyframes slideIn {
+    to { transform: translateX(0); }
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+}
