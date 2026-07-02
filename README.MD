@@ -4,9 +4,7 @@
   <img src="static/readmeicon.jpg" alt="sms2i Icon" width="360" />
 </p>
 <p align="center">
-
-
-  <strong>Scan. Match. Count.</strong>
+<strong>Scan. Match. Count.</strong>
 </p>
 
 <p align="center">
