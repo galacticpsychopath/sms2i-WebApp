@@ -4,10 +4,11 @@ import time
 import cv2
 from flask import Flask, render_template, Response, jsonify, request, url_for , send_from_directory
 import camera_manager
-from testing import formfilter
-from testing import expdatefilter
-from testing import exsistingproddetection
-import sqlite3
+#from testing import formfilter
+#from testing import expdatefilter
+#from testing import exsistingproddetection
+import sqlite3 
+
 
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -191,29 +192,6 @@ def current_detection():
     })
 
 
-@app.route('/api/update_config', methods=['POST'])
-def update_config():
-    data = request.get_json()
-    print("Config update request received:", data)
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-
-    threashold = data.get('threashold')
-    objectarea = data.get('objectarea')
-    roivalues = data.get('roi')
-    if roivalues and len(roivalues)==4 :
-        camera_manager.roi_x = int(roivalues[0])
-        camera_manager.roi_y = int(roivalues[1])
-        camera_manager.roi_w = int(roivalues[2])
-        camera_manager.roi_h = int(roivalues[3])
-        
-    if threashold is not None:
-        camera_manager.detection_threshold = float(threashold)
-    if objectarea is not None:
-        camera_manager.detection_area = float(objectarea)
-
-    return jsonify({'message': 'Configuration updated successfully'}), 200
-
 @app.route('/api/search_products', methods=['GET'])
 def search_products():
     query = request.args.get('query', '').strip()
@@ -238,8 +216,8 @@ def search_products():
 
 @app.route('/api/check_product', methods=['POST'])
 def check_product():
-    current_area = 0 
-    current_threshold = 170
+    current_area = 0
+    current_threshold = 150
     print(f"DEBUG: Current Target Area: {camera_manager.detection_area}, Target Threshold: {camera_manager.detection_threshold}")
     if not camera_manager.camera_active:
         return jsonify({'error': 'Camera is not active'}), 503
@@ -247,6 +225,9 @@ def check_product():
     live_crop_img = getattr(camera_manager, 'live_crop_img', None)
     if live_crop_img is None:
         return jsonify({'error': 'No inspection image available yet'}), 400
+    
+    cv2.imwrite("DEBUG_LIVE_CROP.png", live_crop_img)
+    print("--> [VISION DEBUG] Saved current camera frame view to local directory!")
 
     exp_date_check = expdatefilter.check_product_expiration(live_crop_img)
     print("exp date check result :", exp_date_check)
@@ -270,22 +251,24 @@ def check_product():
         form_check = formfilter.check_product_form(live_crop_img, perfect_database_img)
     print("form check result :", form_check)
 
-    if exp_date_check[0] or exsisting_product_check[0] or form_check[0]:
+    print(f"Final Validation Logs Exp: {exp_date_check[0]}, Exists: {exsisting_product_check[0]}, Form: {form_check[0]}")
+
+    
+    if exsisting_product_check[0] and form_check[0]:
         return jsonify({
-            'result': 'Product detected successfully!',
-            'details': {
-                'expiration_check': exp_date_check,
-                'existence_check': exsisting_product_check,
-                'form_check': form_check
-            }
+            'result': 'Product verified successfully!',
+            'existence_check': [True, "the product exists"],
+            'expiration_check': exp_date_check,
+            'form_check': form_check
         }), 200
     else:
+        
         return jsonify({
-        'result': 'Product check failed.',
-        'expiration_check': exp_date_check,
-        'existence_check': exsisting_product_check,
-        'form_check': form_check
-    }), 400
+            'result': 'Product check failed.',
+            'existence_check': exsisting_product_check,
+            'expiration_check': exp_date_check,
+            'form_check': form_check
+        }), 400
 
 
 

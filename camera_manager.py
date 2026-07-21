@@ -63,21 +63,20 @@ def generate_frames():
         found_contours, _ = cv2.findContours(binary_map, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         detected_count = 0
-        live_crop_img = None
+        # Set default fallback so the crop is never a broken null object
+        live_crop_img = analysis_zone.copy() 
 
-        
         for contour in found_contours:
-            # Drop any item structural size that falls below your area constraint limit
             if cv2.contourArea(contour) > detection_area:
                 detected_count += 1
                 x, y, w, h = cv2.boundingRect(contour)
+                # Crop tightly around the valid object contour matrix
                 live_crop_img = analysis_zone[y:y+h, x:x+w]
-                # Offset vector points back to parent matrix coordinate scale if analyzing within a crop box
+                
                 if roi_w > 0 and roi_h > 0:
                     contour[:, :, 0] += roi_x
                     contour[:, :, 1] += roi_y
 
-                # Draw a clean, thick green outline around the verified items on screen
                 cv2.drawContours(frame, [contour], -1, (0, 255, 0), 3)
 
         

@@ -2,7 +2,7 @@ import cv2
 import os
 
 
-def check_product_existence(live_crop_img, all_db_products, similarity_threshold=0.70):
+def check_product_existence(live_crop_img, all_db_products, similarity_threshold=0.40):
     
     if live_crop_img is None or not all_db_products:
         print("Error: live crop image is not found or database is empty !")
